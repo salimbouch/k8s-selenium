@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <title>Button Demo</title>
+  <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f0f0; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        button { margin: 10px 0; padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        #output { margin-top: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+    </style>
+</head>
+<body>
+<div class="container">
+  <h1>Button Demo</h1>
+  <button onclick="changeText('Button 1 was pressed')">Button 1</button>
+  <button onclick="changeText('Button 2 was pressed')">Button 2</button>
+  <a href="/page2"><button>Button 3</button></a>
+  <div id="output"></div>
+</div>
+
+<script>
+        function changeText(text) {
+            document.getElementById('output').innerText = text;
+        }
+    </script>
+</body>
+</html>
