@@ -1,0 +1,6 @@
+FROM maven:3.8.4-openjdk-17
+WORKDIR /usr/src/app
+COPY pom.xml .
+COPY src ./src
+RUN mvn dependency:go-offline
+CMD ["mvn", "test", "-DHUB_URL=http://selenium-hub:4444/wd/hub", "-DAPP_URL=http://web-app:8080"]
