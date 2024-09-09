@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: selenium-test
+spec:
+  template:
+    metadata:
+      name: selenium-test
+    spec:
+      containers:
+        - name: test
+          image: demo-test:latest
+          imagePullPolicy: Never
+          env:
+            - name: HUB_URL
+              value: "http://selenium-hub:4444/wd/hub"
+            - name: APP_URL
+              value: "http://web-app:8080"
+      restartPolicy: Never
+  backoffLimit: 4
