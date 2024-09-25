@@ -9,8 +9,8 @@ spec:
     spec:
       containers:
         - name: test
-          image: demo-test:latest
-          imagePullPolicy: Never
+          image: salimbouch/k8s-selenium:demo-test
+          imagePullPolicy: Always
           env:
             - name: HUB_URL
               value: "http://selenium-hub:4444/wd/hub"
