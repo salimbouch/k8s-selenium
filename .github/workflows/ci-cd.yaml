@@ -33,6 +33,6 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          context: .docker/Dockerfile
+          context: docker/Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-latest
