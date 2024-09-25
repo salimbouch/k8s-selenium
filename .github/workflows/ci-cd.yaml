@@ -30,10 +30,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push Web App Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
           file: ./docker/Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-latest
+
+      - name: Build and push Test Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./docker/Dockerfile.test
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-latest
