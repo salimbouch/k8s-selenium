@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: web-app
-          image: salimbou/k8s-selenium:web-app-606eb67b56105ffd9bb02ac8741219f0c63df783
+          image: salimbou/k8s-selenium:web-app-cae71be7229cee1deeaea9e426138d1855bb9d55
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
