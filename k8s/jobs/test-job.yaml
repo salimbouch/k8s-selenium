@@ -9,7 +9,7 @@ spec:
     spec:
       containers:
         - name: test
-          image: salimbou/k8s-selenium:test-13d1bf3602477f7a1f6882d0546810c7b018e1e5
+          image: salimbou/k8s-selenium:test-606eb67b56105ffd9bb02ac8741219f0c63df783
           imagePullPolicy: Always
           env:
             - name: HUB_URL
