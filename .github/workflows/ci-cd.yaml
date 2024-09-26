@@ -43,10 +43,10 @@ jobs:
         env:
           PAT: ${{ secrets.PAT }}
         run: |
-          git config --global user.name 'GitHub Actions'
-          git config --global user.email 'actions@github.com'
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           sed -i 's|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}|' k8s/deployments/web-app-deployment.yaml
           sed -i 's|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }}|' k8s/jobs/test-job.yaml
           git add k8s/*.yaml
           git commit -m "Update image tags to ${{ github.sha }}"
-          git push https://${PAT}@github.com/${{ github.repository }}.git HEAD:main
+          git push "https://$PAT@github.com/${{ github.repository }}.git" HEAD:main
