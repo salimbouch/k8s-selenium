@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: chrome-node
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: chrome-node
