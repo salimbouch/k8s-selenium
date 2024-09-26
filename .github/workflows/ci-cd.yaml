@@ -45,3 +45,19 @@ jobs:
           file: ./docker/Dockerfile.test
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-latest
+
+      # Neue Schritte für ArgoCD und Kubernetes Manifeste
+      - name: Update Kubernetes manifests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Aktualisiere die Image-Tags in den Kubernetes-Manifesten
+          sed -i 's|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}|' k8s/deployments/web-app-deployment.yaml
+          sed -i 's|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }}|' k8s/jobs/test-job.yaml
+          
+          # Commit und Push der aktualisierten Manifeste
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          git add k8s/*.yaml
+          git commit -m "Update image tags to ${{ github.sha }}"
+          git push
