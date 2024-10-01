@@ -83,37 +83,33 @@ jobs:
           ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
         run: |
           echo "Checking ArgoCD installation..."
-          if ! ssh targetvm "which argocd"; then
-            echo "ArgoCD CLI not found. Please install ArgoCD CLI on the target VM."
-            exit 1
-          fi
+          ssh targetvm "which argocd"
 
           echo "Checking ArgoCD server status..."
-          if ! ssh targetvm "kubectl get pods -n argocd | grep argocd-server"; then
-            echo "ArgoCD server pod not found. Please ensure ArgoCD is installed in the cluster."
+          ssh targetvm "kubectl get pods -n argocd | grep argocd-server"
+
+          echo "Checking ArgoCD server accessibility..."
+          ssh targetvm "curl -k https://localhost:8080"
+
+          echo "Attempting to login to ArgoCD with verbose output..."
+          ssh targetvm "ARGOCD_SERVER='localhost:8080' ARGOCD_AUTH_TOKEN=$ARGOCD_TOKEN argocd login localhost:8080 --insecure --grpc-web --verbose"
+
+          if [ $? -ne 0 ]; then
+            echo "ArgoCD login failed. Checking server configuration..."
+            ssh targetvm "kubectl get configmap argocd-cm -n argocd -o yaml"
+
+            echo "Checking ArgoCD SSL configuration..."
+            ssh targetvm "kubectl get secret argocd-secret -n argocd -o yaml"
+
+            echo "ArgoCD login failed. Please check the logs and configuration."
             exit 1
           fi
-
-          echo "Attempting to login to ArgoCD..."
-          ssh targetvm "argocd login localhost:8080 --auth-token $ARGOCD_TOKEN --insecure --grpc-web" || {
-            echo "ArgoCD login failed. Checking ArgoCD server logs..."
-            ssh targetvm "kubectl logs -n argocd -l app.kubernetes.io/name=argocd-server --tail=50"
-            exit 1
-          }
 
           echo "Syncing ArgoCD application..."
-          if ! ssh targetvm "argocd app sync ba-demo-app --timeout 300"; then
-            echo "ArgoCD sync failed. Checking application status..."
-            ssh targetvm "argocd app get ba-demo-app"
-            exit 1
-          fi
+          ssh targetvm "argocd app sync ba-demo-app --timeout 300"
 
           echo "Waiting for ArgoCD application to become healthy..."
-          if ! ssh targetvm "argocd app wait ba-demo-app --health --timeout 300"; then
-            echo "Application did not become healthy. Checking resources..."
-            ssh targetvm "kubectl get all -n default"
-            exit 1
-          fi
+          ssh targetvm "argocd app wait ba-demo-app --health --timeout 300"
 
           echo "Verifying deployment update..."
           DEPLOYED_IMAGE=$(ssh targetvm "kubectl get deployment web-app -o=jsonpath='{.spec.template.spec.containers[0].image}'")
