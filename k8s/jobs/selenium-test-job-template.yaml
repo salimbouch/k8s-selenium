@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: selenium-test-job
+spec:
+  template:
+    metadata:
+      name: selenium-test
+    spec:
+      containers:
+        - name: selenium-test
+          image: ${DOCKERHUB_USERNAME}/k8s-selenium:test-${IMAGE_TAG}
+          env:
+            - name: HUB_URL
+              value: "http://selenium-hub:4444/wd/hub"
+            - name: APP_URL
+              value: "http://web-app:8080"
+      restartPolicy: Never
+  backoffLimit: 0
