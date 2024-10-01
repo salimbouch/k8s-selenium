@@ -15,5 +15,12 @@ spec:
               value: "http://selenium-hub:4444/wd/hub"
             - name: APP_URL
               value: "http://web-app:8080"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
       restartPolicy: Never
   backoffLimit: 2

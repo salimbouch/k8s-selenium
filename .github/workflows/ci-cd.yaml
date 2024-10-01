@@ -68,16 +68,21 @@ jobs:
             StrictHostKeyChecking no
           EOF
 
-      - name: Test SSH connection
-        run: ssh targetvm "echo SSH connection successful"
-
       - name: Update K8s manifests and trigger ArgoCD sync
         run: |
           ssh targetvm "kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}"
+          
+          echo "Generating Selenium test job YAML..."
+          SELENIUM_JOB_YAML=$(cat k8s/jobs/selenium-test-job-template.yaml | sed 's|\${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' | sed 's|\${IMAGE_TAG}|${{ github.sha }}|g')
+          echo "$SELENIUM_JOB_YAML"
+          
           ssh targetvm "cat > selenium-test-job.yaml << EOF
-          $(cat k8s/jobs/selenium-test-job-template.yaml | sed 's|\${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' | sed 's|\${IMAGE_TAG}|${{ github.sha }}|g')
+          $SELENIUM_JOB_YAML
           EOF"
+          
+          echo "Applying Selenium test job..."
           ssh targetvm "kubectl apply -f selenium-test-job.yaml"
+          
           ssh targetvm "argocd app sync ba-demo-app"
           ssh targetvm "argocd app wait ba-demo-app --health"
           ssh targetvm "kubectl wait --for=condition=complete job/selenium-test-job --timeout=600s"
