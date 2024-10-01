@@ -45,44 +45,39 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-latest
 
-      - name: Setup SSH for VM access
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Install sshpass
+        run: sudo apt-get install sshpass
+
+      - name: Setup SSH config
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          cat >>~/.ssh/config <<EOF
-          Host jumphost
-            HostName ${{ secrets.JUMP_HOST }}
-            User ${{ secrets.JUMP_USER }}
-            IdentityFile ~/.ssh/id_ed25519
-            StrictHostKeyChecking no
-          Host targetvm
-            HostName ${{ secrets.VM_HOST }}
-            User ${{ secrets.VM_USER }}
-            ProxyJump jumphost
-            IdentityFile ~/.ssh/id_ed25519
-            StrictHostKeyChecking no
-          EOF
+          echo "Host jumphost" >> ~/.ssh/config
+          echo "  HostName ${{ secrets.JUMP_HOST }}" >> ~/.ssh/config
+          echo "  User ${{ secrets.JUMP_USER }}" >> ~/.ssh/config
+          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "Host targetvm" >> ~/.ssh/config
+          echo "  HostName ${{ secrets.VM_HOST }}" >> ~/.ssh/config
+          echo "  User ${{ secrets.VM_USER }}" >> ~/.ssh/config
+          echo "  ProxyCommand sshpass -p '${{ secrets.JUMP_PASS }}' ssh -o StrictHostKeyChecking=no -W %h:%p ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }}" >> ~/.ssh/config
+          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
 
       - name: Test SSH connection
-        run: ssh targetvm "echo SSH connection successful"
+        run: sshpass -p '${{ secrets.VM_PASS }}' ssh targetvm "echo SSH connection successful"
 
       - name: Update K8s manifests and trigger ArgoCD sync
         run: |
-          ssh targetvm "kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}"
-          ssh targetvm "cat > selenium-test-job.yaml << EOF
+          sshpass -p '${{ secrets.VM_PASS }}' ssh targetvm "kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}"
+          sshpass -p '${{ secrets.VM_PASS }}' ssh targetvm "cat > selenium-test-job.yaml << EOF
           $(cat k8s/jobs/selenium-test-job-template.yaml | sed 's/${DOCKERHUB_USERNAME}/${{ secrets.DOCKERHUB_USERNAME }}/g' | sed 's/${IMAGE_TAG}/${{ github.sha }}/g')
           EOF"
-          ssh targetvm "kubectl apply -f selenium-test-job.yaml"
-          ssh targetvm "argocd app sync ba-demo-app"
-          ssh targetvm "argocd app wait ba-demo-app --health"
-          ssh targetvm "kubectl wait --for=condition=complete job/selenium-test-job --timeout=600s"
+          sshpass -p '${{ secrets.VM_PASS }}' ssh targetvm "kubectl apply -f selenium-test-job.yaml"
+          sshpass -p '${{ secrets.VM_PASS }}' ssh targetvm "argocd app sync ba-demo-app"
+          sshpass -p '${{ secrets.VM_PASS }}' ssh targetvm "argocd app wait ba-demo-app --health"
+          sshpass -p '${{ secrets.VM_PASS }}' ssh targetvm "kubectl wait --for=condition=complete job/selenium-test-job --timeout=600s"
 
       - name: Check test results
         run: |
-          ssh targetvm "kubectl logs job/selenium-test-job" > test_results.log
+          sshpass -p '${{ secrets.VM_PASS }}' ssh targetvm "kubectl logs job/selenium-test-job" > test_results.log
           if grep -q "BUILD FAILURE" test_results.log; then
             echo "Tests failed. Check the logs for more details."
             exit 1
@@ -100,4 +95,4 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          ssh targetvm "kubectl delete job selenium-test-job"
+          sshpass -p '${{ secrets.VM_PASS }}' ssh targetvm "kubectl delete job selenium-test-job"
