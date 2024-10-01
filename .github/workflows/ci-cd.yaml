@@ -88,28 +88,28 @@ jobs:
           echo "Checking ArgoCD server status..."
           ssh targetvm "kubectl get pods -n argocd | grep argocd-server"
 
-          echo "Checking ArgoCD server accessibility..."
-          ssh targetvm "curl -k https://localhost:8080"
+          echo "Getting ArgoCD NodePort..."
+          ARGOCD_PORT=$(ssh targetvm "kubectl get svc argocd-server -n argocd -o jsonpath='{.spec.ports[0].nodePort}'")
+          echo "ArgoCD is available on port: $ARGOCD_PORT"
 
-          echo "Attempting to login to ArgoCD with verbose output..."
-          ssh targetvm "ARGOCD_SERVER='localhost:8080' ARGOCD_AUTH_TOKEN=$ARGOCD_TOKEN argocd login localhost:8080 --insecure --grpc-web --verbose"
+          echo "Checking ArgoCD server accessibility..."
+          ssh targetvm "curl -k https://localhost:$ARGOCD_PORT"
+
+          echo "Attempting to login to ArgoCD..."
+          ssh targetvm "ARGOCD_SERVER='localhost:$ARGOCD_PORT' ARGOCD_AUTH_TOKEN=$ARGOCD_TOKEN argocd login localhost:$ARGOCD_PORT --insecure --grpc-web"
 
           if [ $? -ne 0 ]; then
             echo "ArgoCD login failed. Checking server configuration..."
             ssh targetvm "kubectl get configmap argocd-cm -n argocd -o yaml"
-
-            echo "Checking ArgoCD SSL configuration..."
-            ssh targetvm "kubectl get secret argocd-secret -n argocd -o yaml"
-
             echo "ArgoCD login failed. Please check the logs and configuration."
             exit 1
           fi
 
           echo "Syncing ArgoCD application..."
-          ssh targetvm "argocd app sync ba-demo-app --timeout 300"
+          ssh targetvm "ARGOCD_SERVER='localhost:$ARGOCD_PORT' argocd app sync ba-demo-app --timeout 300"
 
           echo "Waiting for ArgoCD application to become healthy..."
-          ssh targetvm "argocd app wait ba-demo-app --health --timeout 300"
+          ssh targetvm "ARGOCD_SERVER='localhost:$ARGOCD_PORT' argocd app wait ba-demo-app --health --timeout 300"
 
           echo "Verifying deployment update..."
           DEPLOYED_IMAGE=$(ssh targetvm "kubectl get deployment web-app -o=jsonpath='{.spec.template.spec.containers[0].image}'")
