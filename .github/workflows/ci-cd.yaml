@@ -9,7 +9,8 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Set up JDK 17
         uses: actions/setup-java@v3
@@ -35,7 +36,7 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-latest
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}
 
       - name: Build and push Test Docker image
         uses: docker/build-push-action@v4
@@ -43,7 +44,16 @@ jobs:
           context: .
           file: ./docker/Dockerfile.test
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-latest
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }}
+
+      - name: Update K8s manifests
+        run: |
+          sed -i 's|image: .*|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}|' k8s/deployments/web-app-deployment.yaml
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          git add k8s/deployments/web-app-deployment.yaml
+          git commit -m "Update web-app image to ${{ github.sha }}"
+          git push
 
       - name: Setup SSH for VM access
         env:
@@ -68,42 +78,41 @@ jobs:
             StrictHostKeyChecking no
           EOF
 
-      - name: Update K8s manifests and trigger ArgoCD sync
+      - name: Sync and deploy with ArgoCD
         env:
           ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
         run: |
-          ssh targetvm "kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}"
-          
-          echo "Generating Selenium test job YAML..."
-          JOB_NAME="selenium-test-job-$(date +%s)"
-          SELENIUM_JOB_YAML=$(cat k8s/jobs/selenium-test-job-template.yaml | 
-            sed 's|\${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' | 
-            sed 's|\${IMAGE_TAG}|${{ github.sha }}|g' |
-            sed "s|name: selenium-test-job|name: $JOB_NAME|g")
-          echo "$SELENIUM_JOB_YAML"
-          
-          ssh targetvm "cat > selenium-test-job.yaml << EOF
-          $SELENIUM_JOB_YAML
-          EOF"
-          
-          echo "Deleting old Selenium test jobs..."
-          ssh targetvm "kubectl delete job -l app=selenium-test --ignore-not-found"
-          
-          echo "Applying new Selenium test job..."
-          ssh targetvm "kubectl apply -f selenium-test-job.yaml"
-          
           echo "Syncing ArgoCD application..."
           ssh targetvm "argocd login localhost:8080 --auth-token $ARGOCD_TOKEN --insecure && argocd app sync ba-demo-app --timeout 300"
           
           echo "Waiting for ArgoCD application to become healthy..."
           ssh targetvm "argocd app wait ba-demo-app --health --timeout 300"
           
+          echo "Verifying deployment update..."
+          DEPLOYED_IMAGE=$(ssh targetvm "kubectl get deployment web-app -o=jsonpath='{.spec.template.spec.containers[0].image}'")
+          if [[ "$DEPLOYED_IMAGE" != "${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}" ]]; then
+            echo "Deployment not updated to the latest image. Exiting."
+            exit 1
+          fi
+
+      - name: Run Selenium tests
+        run: |
+          echo "Generating Selenium test job YAML..."
+          JOB_NAME="selenium-test-job-$(date +%s)"
+          SELENIUM_JOB_YAML=$(cat k8s/jobs/selenium-test-job-template.yaml | 
+            sed 's|\${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' | 
+            sed 's|\${IMAGE_TAG}|${{ github.sha }}|g' |
+            sed "s|name: selenium-test-job|name: $JOB_NAME|g")
+          
+          echo "Applying new Selenium test job..."
+          echo "$SELENIUM_JOB_YAML" | ssh targetvm "kubectl apply -f -"
+          
           echo "Waiting for Selenium test job to complete..."
           ssh targetvm "kubectl wait --for=condition=complete job/$JOB_NAME --timeout=600s"
-
-      - name: Check test results
-        run: |
+          
+          echo "Retrieving test results..."
           ssh targetvm "kubectl logs job/$JOB_NAME" > test_results.log
+          
           if grep -q "BUILD FAILURE" test_results.log; then
             echo "Tests failed. Check the logs for more details."
             exit 1
