@@ -16,4 +16,4 @@ spec:
             - name: APP_URL
               value: "http://web-app:8080"
       restartPolicy: Never
-  backoffLimit: 0
+  backoffLimit: 2

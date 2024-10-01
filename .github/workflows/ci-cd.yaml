@@ -75,7 +75,7 @@ jobs:
         run: |
           ssh targetvm "kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}"
           ssh targetvm "cat > selenium-test-job.yaml << EOF
-          $(cat k8s/jobs/selenium-test-job-template.yaml | sed 's/${DOCKERHUB_USERNAME}/${{ secrets.DOCKERHUB_USERNAME }}/g' | sed 's/${IMAGE_TAG}/${{ github.sha }}/g')
+          $(cat k8s/jobs/selenium-test-job-template.yaml | sed 's|\${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' | sed 's|\${IMAGE_TAG}|${{ github.sha }}|g')
           EOF"
           ssh targetvm "kubectl apply -f selenium-test-job.yaml"
           ssh targetvm "argocd app sync ba-demo-app"
