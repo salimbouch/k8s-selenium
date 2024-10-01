@@ -73,19 +73,26 @@ jobs:
           ssh targetvm "kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}"
           
           echo "Generating Selenium test job YAML..."
-          SELENIUM_JOB_YAML=$(cat k8s/jobs/selenium-test-job-template.yaml | sed 's|\${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' | sed 's|\${IMAGE_TAG}|${{ github.sha }}|g')
+          JOB_NAME="selenium-test-job-$(date +%s)"
+          SELENIUM_JOB_YAML=$(cat k8s/jobs/selenium-test-job-template.yaml | 
+            sed 's|\${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' | 
+            sed 's|\${IMAGE_TAG}|${{ github.sha }}|g' |
+            sed "s|name: selenium-test-job|name: $JOB_NAME|g")
           echo "$SELENIUM_JOB_YAML"
           
           ssh targetvm "cat > selenium-test-job.yaml << EOF
           $SELENIUM_JOB_YAML
           EOF"
           
-          echo "Applying Selenium test job..."
+          echo "Deleting old Selenium test jobs..."
+          ssh targetvm "kubectl delete job -l app=selenium-test --ignore-not-found"
+          
+          echo "Applying new Selenium test job..."
           ssh targetvm "kubectl apply -f selenium-test-job.yaml"
           
           ssh targetvm "argocd app sync ba-demo-app"
           ssh targetvm "argocd app wait ba-demo-app --health"
-          ssh targetvm "kubectl wait --for=condition=complete job/selenium-test-job --timeout=600s"
+          ssh targetvm "kubectl wait --for=condition=complete job/$JOB_NAME --timeout=600s"
 
       - name: Check test results
         run: |
