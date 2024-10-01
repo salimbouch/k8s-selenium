@@ -47,26 +47,27 @@ jobs:
 
       - name: Setup SSH for VM access
         env:
-          JUMP_HOST_SSH_PRIVATE_KEY: ${{ secrets.JUMP_HOST_SSH_PRIVATE_KEY }}
-          VM_SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$JUMP_HOST_SSH_PRIVATE_KEY" > ~/.ssh/jump_host_key
-          echo "$VM_SSH_PRIVATE_KEY" > ~/.ssh/vm_key
-          chmod 600 ~/.ssh/jump_host_key ~/.ssh/vm_key
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
           cat >>~/.ssh/config <<EOF
           Host jumphost
             HostName ${{ secrets.JUMP_HOST }}
             User ${{ secrets.JUMP_USER }}
-            IdentityFile ~/.ssh/jump_host_key
+            IdentityFile ~/.ssh/id_ed25519
             StrictHostKeyChecking no
           Host targetvm
             HostName ${{ secrets.VM_HOST }}
             User ${{ secrets.VM_USER }}
             ProxyJump jumphost
-            IdentityFile ~/.ssh/vm_key
+            IdentityFile ~/.ssh/id_ed25519
             StrictHostKeyChecking no
           EOF
+
+      - name: Test SSH connection
+        run: ssh targetvm "echo SSH connection successful"
 
       - name: Update K8s manifests and trigger ArgoCD sync
         run: |
