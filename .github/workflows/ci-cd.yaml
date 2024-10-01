@@ -82,18 +82,47 @@ jobs:
         env:
           ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
         run: |
+          echo "Checking ArgoCD installation..."
+          if ! ssh targetvm "which argocd"; then
+            echo "ArgoCD CLI not found. Please install ArgoCD CLI on the target VM."
+            exit 1
+          fi
+
+          echo "Checking ArgoCD server status..."
+          if ! ssh targetvm "kubectl get pods -n argocd | grep argocd-server"; then
+            echo "ArgoCD server pod not found. Please ensure ArgoCD is installed in the cluster."
+            exit 1
+          fi
+
+          echo "Attempting to login to ArgoCD..."
+          ssh targetvm "argocd login localhost:8080 --auth-token $ARGOCD_TOKEN --insecure --grpc-web" || {
+            echo "ArgoCD login failed. Checking ArgoCD server logs..."
+            ssh targetvm "kubectl logs -n argocd -l app.kubernetes.io/name=argocd-server --tail=50"
+            exit 1
+          }
+
           echo "Syncing ArgoCD application..."
-          ssh targetvm "argocd login localhost:8080 --auth-token $ARGOCD_TOKEN --insecure && argocd app sync ba-demo-app --timeout 300"
-          
+          if ! ssh targetvm "argocd app sync ba-demo-app --timeout 300"; then
+            echo "ArgoCD sync failed. Checking application status..."
+            ssh targetvm "argocd app get ba-demo-app"
+            exit 1
+          fi
+
           echo "Waiting for ArgoCD application to become healthy..."
-          ssh targetvm "argocd app wait ba-demo-app --health --timeout 300"
-          
+          if ! ssh targetvm "argocd app wait ba-demo-app --health --timeout 300"; then
+            echo "Application did not become healthy. Checking resources..."
+            ssh targetvm "kubectl get all -n default"
+            exit 1
+          fi
+
           echo "Verifying deployment update..."
           DEPLOYED_IMAGE=$(ssh targetvm "kubectl get deployment web-app -o=jsonpath='{.spec.template.spec.containers[0].image}'")
           if [[ "$DEPLOYED_IMAGE" != "${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}" ]]; then
-            echo "Deployment not updated to the latest image. Exiting."
+            echo "Deployment not updated to the latest image. Current image: $DEPLOYED_IMAGE"
             exit 1
           fi
+
+          echo "ArgoCD sync and deployment verification completed successfully."
 
       - name: Run Selenium tests
         run: |
