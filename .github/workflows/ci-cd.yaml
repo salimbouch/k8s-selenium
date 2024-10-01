@@ -69,6 +69,8 @@ jobs:
           EOF
 
       - name: Update K8s manifests and trigger ArgoCD sync
+        env:
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
         run: |
           ssh targetvm "kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}"
           
@@ -90,13 +92,18 @@ jobs:
           echo "Applying new Selenium test job..."
           ssh targetvm "kubectl apply -f selenium-test-job.yaml"
           
-          ssh targetvm "argocd app sync ba-demo-app"
-          ssh targetvm "argocd app wait ba-demo-app --health"
+          echo "Syncing ArgoCD application..."
+          ssh targetvm "argocd login localhost:8080 --auth-token $ARGOCD_TOKEN --insecure && argocd app sync ba-demo-app --timeout 300"
+          
+          echo "Waiting for ArgoCD application to become healthy..."
+          ssh targetvm "argocd app wait ba-demo-app --health --timeout 300"
+          
+          echo "Waiting for Selenium test job to complete..."
           ssh targetvm "kubectl wait --for=condition=complete job/$JOB_NAME --timeout=600s"
 
       - name: Check test results
         run: |
-          ssh targetvm "kubectl logs job/selenium-test-job" > test_results.log
+          ssh targetvm "kubectl logs job/$JOB_NAME" > test_results.log
           if grep -q "BUILD FAILURE" test_results.log; then
             echo "Tests failed. Check the logs for more details."
             exit 1
@@ -114,4 +121,4 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          ssh targetvm "kubectl delete job selenium-test-job"
+          ssh targetvm "kubectl delete job $JOB_NAME"
