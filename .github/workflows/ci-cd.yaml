@@ -45,46 +45,46 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-latest
 
-
       - name: Setup SSH for VM access
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          JUMP_HOST_SSH_PRIVATE_KEY: ${{ secrets.JUMP_HOST_SSH_PRIVATE_KEY }}
+          VM_SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          echo "$JUMP_HOST_SSH_PRIVATE_KEY" > ~/.ssh/jump_host_key
+          echo "$VM_SSH_PRIVATE_KEY" > ~/.ssh/vm_key
+          chmod 600 ~/.ssh/jump_host_key ~/.ssh/vm_key
           cat >>~/.ssh/config <<EOF
           Host jumphost
             HostName ${{ secrets.JUMP_HOST }}
             User ${{ secrets.JUMP_USER }}
-            IdentityFile ~/.ssh/id_ed25519
+            IdentityFile ~/.ssh/jump_host_key
             StrictHostKeyChecking no
           Host targetvm
             HostName ${{ secrets.VM_HOST }}
             User ${{ secrets.VM_USER }}
             ProxyJump jumphost
-            IdentityFile ~/.ssh/id_ed25519
+            IdentityFile ~/.ssh/vm_key
             StrictHostKeyChecking no
           EOF
-          
+
       - name: Test SSH connection
         run: ssh targetvm "echo SSH connection successful"
 
       - name: Update K8s manifests and trigger ArgoCD sync
         run: |
-          ssh -J ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} ${{ secrets.TARGET_USER }}@${{ secrets.TARGET_HOST }} "kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}"
-          ssh -J ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} ${{ secrets.TARGET_USER }}@${{ secrets.TARGET_HOST }} "cat > selenium-test-job.yaml << EOF
+          ssh targetvm "kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}"
+          ssh targetvm "cat > selenium-test-job.yaml << EOF
           $(cat k8s/jobs/selenium-test-job-template.yaml | sed 's/${DOCKERHUB_USERNAME}/${{ secrets.DOCKERHUB_USERNAME }}/g' | sed 's/${IMAGE_TAG}/${{ github.sha }}/g')
           EOF"
-          ssh -J ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} ${{ secrets.TARGET_USER }}@${{ secrets.TARGET_HOST }} "kubectl apply -f selenium-test-job.yaml"
-          ssh -J ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} ${{ secrets.TARGET_USER }}@${{ secrets.TARGET_HOST }} "argocd app sync ba-demo-app"
-          ssh -J ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} ${{ secrets.TARGET_USER }}@${{ secrets.TARGET_HOST }} "argocd app wait ba-demo-app --health"
-          ssh -J ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} ${{ secrets.TARGET_USER }}@${{ secrets.TARGET_HOST }} "kubectl wait --for=condition=complete job/selenium-test-job --timeout=600s"
-
+          ssh targetvm "kubectl apply -f selenium-test-job.yaml"
+          ssh targetvm "argocd app sync ba-demo-app"
+          ssh targetvm "argocd app wait ba-demo-app --health"
+          ssh targetvm "kubectl wait --for=condition=complete job/selenium-test-job --timeout=600s"
 
       - name: Check test results
         run: |
-          ssh -J ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} ${{ secrets.TARGET_USER }}@${{ secrets.TARGET_HOST }} "kubectl logs job/selenium-test-job" > test_results.log
+          ssh targetvm "kubectl logs job/selenium-test-job" > test_results.log
           if grep -q "BUILD FAILURE" test_results.log; then
             echo "Tests failed. Check the logs for more details."
             exit 1
