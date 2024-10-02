@@ -9,7 +9,7 @@ spec:
     spec:
       containers:
         - name: test
-          image: salimbou/k8s-selenium:test-bdecfc29518c28eb7cbdc63f65e556e0f404690f
+          image: ${DOCKERHUB_USERNAME}/k8s-selenium:test-${IMAGE_TAG}
           imagePullPolicy: Always
           env:
             - name: HUB_URL
