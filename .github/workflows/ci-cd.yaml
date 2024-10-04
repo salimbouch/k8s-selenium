@@ -49,7 +49,7 @@ jobs:
 
       - name: Update Kubernetes deployment with new image
         run: |
-          kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:${{ env.IMAGE_TAG }}
+          kubectl --kubeconfig=./kubeconfig set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:${{ env.IMAGE_TAG }}
 
   run-selenium-tests:
     runs-on: ubuntu-latest
