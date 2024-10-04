@@ -1,95 +1,67 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline for Web App with Selenium Tests
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}  # Use the DockerHub username from GitHub secrets
+      IMAGE_TAG: ${{ github.sha }}  # Use the commit SHA as the image tag
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up JDK 17
+      - name: Set up Java 17
         uses: actions/setup-java@v3
         with:
-          java-version: '17'
           distribution: 'temurin'
+          java-version: '17'
 
-      - name: Build with Maven
+      - name: Build with Maven (no tests)
         run: mvn clean package -DskipTests
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - name: Log in to DockerHub
+        run: echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
+      - name: Build Docker image
+        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/k8s-selenium:${{ github.sha }} .
+
+      - name: Push Docker image to DockerHub
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/k8s-selenium:${{ github.sha }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          version: 'v1.27.0'  # Ensure you're using a compatible version
 
-      - name: Build and push Web App Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./docker/Dockerfile
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}
+      - name: Set up K8s context
+        run: echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
 
-      - name: Build and push Test Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./docker/Dockerfile.test
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }}
-
-      - name: Generate Job Suffix
-        id: generate_suffix
-        run: echo "JOB_SUFFIX=$(date +%s%N | sha256sum | head -c6)" >> $GITHUB_OUTPUT
-
-      - name: Deploy to k3s
-        env:
-          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-          JOB_SUFFIX: ${{ steps.generate_suffix.outputs.JOB_SUFFIX }}
+      - name: Update Kubernetes deployment with new image
         run: |
-          echo "$KUBE_CONFIG" | base64 -d > kubeconfig
-          
-          # Update web-app deployment
-          sed -i 's|image: .*|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}|' k8s/deployments/web-app-deployment.yaml
-          kubectl --kubeconfig=./kubeconfig apply -f k8s/deployments/
-          kubectl --kubeconfig=./kubeconfig apply -f k8s/services/
+          kubectl set image deployment/web-app web-app=${{ secrets.DOCKER_USERNAME }}/k8s-selenium:${{ github.sha }}
 
-          # Create and apply Selenium test job
-          cat k8s/jobs/selenium-test-job.yaml | sed \
-            -e "s/\${JOB_SUFFIX}/$JOB_SUFFIX/g" \
-            -e 's|${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' \
-            -e 's|${IMAGE_TAG}|${{ github.sha }}|g' \
-            | kubectl --kubeconfig=./kubeconfig apply -f -
+  run-selenium-tests:
+    runs-on: ubuntu-latest
+    needs: build-and-deploy  # Ensure the deployment is completed before running tests
+    env:
+      HUB_URL: http://selenium-hub:4444/wd/hub  # Ensure this points to the correct Selenium hub
+      APP_URL: http://web-app:8080  # Kubernetes web app service URL
 
-      - name: Run Selenium tests
-        env:
-          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-          JOB_SUFFIX: ${{ steps.generate_suffix.outputs.JOB_SUFFIX }}
-        run: |
-          kubectl --kubeconfig=./kubeconfig wait --for=condition=complete job/selenium-test-${JOB_SUFFIX} --timeout=600s
-          TEST_POD=$(kubectl --kubeconfig=./kubeconfig get pods --selector=job-name=selenium-test-${JOB_SUFFIX} --output=jsonpath='{.items[*].metadata.name}')
-          kubectl --kubeconfig=./kubeconfig logs $TEST_POD > test_results.log
-          if grep -q "FAILED" test_results.log; then exit 1; fi
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Upload test results
-        uses: actions/upload-artifact@v3
+      - name: Set up Java 17
+        uses: actions/setup-java@v3
         with:
-          name: test-results
-          path: test_results.log
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Cleanup
-        if: always()
-        env:
-          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-          JOB_SUFFIX: ${{ steps.generate_suffix.outputs.JOB_SUFFIX }}
-        run: |
-          kubectl --kubeconfig=./kubeconfig delete job selenium-test-${JOB_SUFFIX}
+      - name: Run Selenium Tests in Parallel
+        run: mvn clean test -DsuiteXmlFile=testng.xml
