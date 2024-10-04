@@ -18,7 +18,6 @@ public class DemoApplicationTest {
     @BeforeMethod
     @Parameters("browser")
     public void setup(String browser) throws Exception {
-
         String hubUrl = System.getProperty("HUB_URL", "http://selenium-hub:4444/wd/hub");
         baseUrl = System.getProperty("APP_URL", "http://web-app:8080");
 
