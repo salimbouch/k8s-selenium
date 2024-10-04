@@ -65,28 +65,50 @@ jobs:
       - name: Delete old test job if exists
         run: kubectl delete job selenium-test-job --ignore-not-found
 
-      - name: Create and run Selenium test job
+      - name: Run and Monitor Selenium Test Job
+        id: selenium-test
         run: |
+          # Apply the job
           cat k8s/jobs/selenium-test-job.yaml | \
           sed "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g; s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g" | \
           kubectl apply -f -
 
-      - name: Wait for job completion and get logs
-        run: |
-          # Wait for the job to complete or fail
-          kubectl wait --for=condition=complete job/selenium-test-job --timeout=300s || \
-          kubectl wait --for=condition=failed job/selenium-test-job --timeout=300s
+          # Function to check job status
+          check_job_status() {
+            kubectl get job selenium-test-job -o jsonpath='{.status.conditions[].type}'
+          }
 
-          # Fetch the logs regardless of the job outcome
+          # Stream logs and monitor job status
+          (
+            kubectl logs -f job/selenium-test-job &
+            while true; do
+              status=$(check_job_status)
+              if [[ $status == "Complete" ]]; then
+                echo "Job completed successfully"
+                exit 0
+              elif [[ $status == "Failed" ]]; then
+                echo "Job failed"
+                exit 1
+              fi
+              sleep 5
+            done
+          )
+
+          # Capture the exit status
+          exit_status=$?
+
+          # Save logs to a file (in case streaming was interrupted)
           kubectl logs job/selenium-test-job > test-results.log
 
-      - name: Check job status and fail if necessary
-        run: |
-          # Check if the job failed
-          if kubectl get job selenium-test-job -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' | grep -q True; then
-            echo "Selenium tests failed"
-            exit 1
+          # Set output variable for use in subsequent steps
+          if [ $exit_status -eq 0 ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
           fi
+
+          # Exit with the appropriate status
+          exit $exit_status
 
       - name: Upload test results
         uses: actions/upload-artifact@v3
@@ -98,3 +120,9 @@ jobs:
       - name: Clean up test job
         if: always()
         run: kubectl delete job selenium-test-job --ignore-not-found
+
+      - name: Check Selenium test status
+        if: steps.selenium-test.outputs.status == 'failure'
+        run: |
+          echo "Selenium tests failed"
+          exit 1
