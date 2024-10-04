@@ -45,20 +45,21 @@ jobs:
 
       - name: Set up Kubeconfig
         run: |
-          echo "$KUBE_CONFIG" | base64 -d > kubeconfig
+          mkdir -p $HOME/.kube  # Ensure the .kube directory exists
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
 
       - name: Update Kubernetes deployment with new image
         run: |
-          kubectl --kubeconfig=./kubeconfig set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:${{ env.IMAGE_TAG }}
+          kubectl --kubeconfig=$HOME/.kube/config set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:${{ env.IMAGE_TAG }}
+          kubectl --kubeconfig=$HOME/.kube/config rollout status deployment/web-app
 
   run-selenium-tests:
     runs-on: ubuntu-latest
-    needs: build-and-deploy  # Ensures build-and-deploy job finishes first
+    needs: build-and-deploy  # Ensure build-and-deploy job finishes first
     env:
       HUB_URL: http://selenium-hub:4444/wd/hub  # Selenium Hub URL in Kubernetes cluster
       APP_URL: http://web-app:8080  # Web app service URL
       DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
 
     steps:
       - name: Checkout code
@@ -72,8 +73,8 @@ jobs:
 
       - name: Set up Kubeconfig
         run: |
-          mkdir -p $HOME/.kube  # Create the .kube directory if it doesn't exist
-          echo "$KUBE_CONFIG" | base64 -d > $HOME/.kube/config
+          mkdir -p $HOME/.kube  # Ensure the .kube directory exists
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
 
       - name: Run Selenium Tests in Parallel
         run: mvn clean test -DsuiteXmlFile=testng.xml
