@@ -67,7 +67,7 @@ jobs:
 
       - name: Create and run Selenium test job
         run: |
-          cat k8s/selenium-test-job.yaml | \
+          cat k8s/jobs/selenium-test-job.yaml | \
           sed "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g; s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g" | \
           kubectl apply -f -
 
