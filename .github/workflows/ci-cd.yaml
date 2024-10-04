@@ -76,24 +76,25 @@ jobs:
           start_time=$(date +%s)
           while true; do
             status=$(kubectl get job selenium-test-job -o jsonpath='{.status.conditions[].type}')
-            if [[ $status == "Complete" ]]; then
-              echo "Selenium tests completed successfully"
-              kubectl logs job/selenium-test-job
-              exit 0
-            elif [[ $status == "Failed" ]]; then
-              echo "Selenium tests failed"
-              kubectl logs job/selenium-test-job
-              exit 1
-            fi
-          
             current_time=$(date +%s)
             elapsed=$((current_time - start_time))
-            if [[ $elapsed -ge 300 ]]; then
-              echo "Selenium tests timed out after 300 seconds"
-              kubectl logs job/selenium-test-job
-              exit 2
+
+            if [[ $status == "Complete" || $status == "Failed" || $elapsed -ge 300 ]]; then
+              if [[ $status == "Complete" ]]; then
+                echo "Selenium tests completed successfully"
+                exit_code=0
+              elif [[ $status == "Failed" ]]; then
+                echo "Selenium tests failed"
+                exit_code=1
+              else
+                echo "Selenium tests timed out after 300 seconds"
+                exit_code=2
+              fi
+
+              kubectl logs job/selenium-test-job | tee test-results.logs
+              exit $exit_code
             fi
-          
+
             sleep 5
           done
 
@@ -102,8 +103,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: test-logs
-          path: |
-            kubectl logs job/selenium-test-job > test-logs.txt
+          path: test-results.logs
 
       - name: Clean up test job
         if: always()
