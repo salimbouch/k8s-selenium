@@ -38,7 +38,7 @@ public class DemoApplicationTest {
         WebElement button1 = driver.findElement(By.xpath("//button[text()='Button 1']"));
         button1.click();
         WebElement output = driver.findElement(By.id("output"));
-        Assert.assertEquals(output.getText(), "Button 12 was pressed");
+        Assert.assertEquals(output.getText(), "Button 1 was pressed");
     }
 
     @Test
