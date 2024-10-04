@@ -1,11 +1,11 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: selenium-test
+  name: ${JOB_NAME}
 spec:
   template:
     metadata:
-      name: selenium-test
+      name: ${JOB_NAME}
     spec:
       containers:
         - name: test

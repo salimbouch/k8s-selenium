@@ -61,17 +61,21 @@ jobs:
           kubectl --kubeconfig=./kubeconfig apply -f k8s/services/
           kubectl --kubeconfig=./kubeconfig set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}
           
-          # Update and apply the Selenium test job
+          # Delete any existing selenium-test job
+          kubectl --kubeconfig=./kubeconfig delete job selenium-test --ignore-not-found
+
+          # Update and apply the Selenium test job with a unique name
           sed -i 's|${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' k8s/jobs/selenium-test-job.yaml
           sed -i 's|${IMAGE_TAG}|${{ github.sha }}|g' k8s/jobs/selenium-test-job.yaml
+          sed -i 's|name: selenium-test|name: selenium-test-${{ github.sha }}|g' k8s/jobs/selenium-test-job.yaml
           kubectl --kubeconfig=./kubeconfig apply -f k8s/jobs/selenium-test-job.yaml
 
       - name: Run Selenium tests
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
         run: |
-          kubectl --kubeconfig=./kubeconfig wait --for=condition=complete job/selenium-test --timeout=600s
-          TEST_POD=$(kubectl --kubeconfig=./kubeconfig get pods --selector=job-name=selenium-test --output=jsonpath='{.items[*].metadata.name}')
+          kubectl --kubeconfig=./kubeconfig wait --for=condition=complete job/selenium-test-${{ github.sha }} --timeout=600s
+          TEST_POD=$(kubectl --kubeconfig=./kubeconfig get pods --selector=job-name=selenium-test-${{ github.sha }} --output=jsonpath='{.items[*].metadata.name}')
           kubectl --kubeconfig=./kubeconfig logs $TEST_POD > test_results.log
           if grep -q "FAILED" test_results.log; then exit 1; fi
 
