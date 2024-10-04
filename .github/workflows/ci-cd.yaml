@@ -73,12 +73,16 @@ jobs:
 
       - name: Wait for job completion and get logs
         run: |
+          # Wait for the job to complete or fail
           kubectl wait --for=condition=complete job/selenium-test-job --timeout=300s || \
-          kubectl wait --for=condition=failed job/selenium-test-job --timeout=10s
+          kubectl wait --for=condition=failed job/selenium-test-job --timeout=300s
+
+          # Fetch the logs regardless of the job outcome
           kubectl logs job/selenium-test-job > test-results.log
 
       - name: Check job status and fail if necessary
         run: |
+          # Check if the job failed
           if kubectl get job selenium-test-job -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' | grep -q True; then
             echo "Selenium tests failed"
             exit 1
