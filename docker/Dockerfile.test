@@ -1,6 +1,11 @@
-FROM maven:3.8.4-openjdk-17
-WORKDIR /usr/src/app
+FROM maven:3.8-openjdk-17
+
+WORKDIR /app
+
 COPY pom.xml .
 COPY src ./src
+COPY testng.xml .
+
 RUN mvn dependency:go-offline
-CMD ["mvn", "test", "-DHUB_URL=http://selenium-hub:4444/wd/hub", "-DAPP_URL=http://web-app:8080"]
+
+CMD ["mvn", "test", "-DsuiteXmlFile=testng.xml"]
