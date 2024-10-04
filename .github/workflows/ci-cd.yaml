@@ -47,9 +47,14 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }}
 
+      - name: Generate Job Suffix
+        id: generate_suffix
+        run: echo "JOB_SUFFIX=$(date +%s%N | sha256sum | head -c6)" >> $GITHUB_OUTPUT
+
       - name: Deploy to k3s
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+          JOB_SUFFIX: ${{ steps.generate_suffix.outputs.JOB_SUFFIX }}
         run: |
           echo "$KUBE_CONFIG" | base64 -d > kubeconfig
           
@@ -59,8 +64,8 @@ jobs:
           kubectl --kubeconfig=./kubeconfig apply -f k8s/services/
 
           # Create and apply Selenium test job
-          export JOB_SUFFIX=$(date +%s%N | sha256sum | head -c6)
-          envsubst < k8s/jobs/selenium-test-job.yaml | sed \
+          cat k8s/jobs/selenium-test-job.yaml | sed \
+            -e "s/\${JOB_SUFFIX}/$JOB_SUFFIX/g" \
             -e 's|${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' \
             -e 's|${IMAGE_TAG}|${{ github.sha }}|g' \
             | kubectl --kubeconfig=./kubeconfig apply -f -
@@ -68,8 +73,8 @@ jobs:
       - name: Run Selenium tests
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+          JOB_SUFFIX: ${{ steps.generate_suffix.outputs.JOB_SUFFIX }}
         run: |
-          export JOB_SUFFIX=$(date +%s%N | sha256sum | head -c6)
           kubectl --kubeconfig=./kubeconfig wait --for=condition=complete job/selenium-test-${JOB_SUFFIX} --timeout=600s
           TEST_POD=$(kubectl --kubeconfig=./kubeconfig get pods --selector=job-name=selenium-test-${JOB_SUFFIX} --output=jsonpath='{.items[*].metadata.name}')
           kubectl --kubeconfig=./kubeconfig logs $TEST_POD > test_results.log
@@ -85,6 +90,6 @@ jobs:
         if: always()
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+          JOB_SUFFIX: ${{ steps.generate_suffix.outputs.JOB_SUFFIX }}
         run: |
-          export JOB_SUFFIX=$(date +%s%N | sha256sum | head -c6)
-          kubectl --kubeconfig=./kubeconfig delete job selenium-test-${JOB_SUFFIX}gi
+          kubectl --kubeconfig=./kubeconfig delete job selenium-test-${JOB_SUFFIX}
