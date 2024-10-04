@@ -4,8 +4,8 @@ WORKDIR /app
 
 COPY pom.xml .
 COPY src ./src
-COPY testng.xml .
+COPY src/test/resources/testng.xml ./src/test/resources/testng.xml
 
 RUN mvn dependency:go-offline
 
-CMD ["mvn", "test", "-DsuiteXmlFile=testng.xml"]
+CMD ["mvn", "test", "-DsuiteXmlFile=src/test/resources/testng.xml"]
