@@ -87,4 +87,4 @@ jobs:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
         run: |
           export JOB_SUFFIX=$(date +%s%N | sha256sum | head -c6)
-          kubectl --kubeconfig=./kubeconfig delete job selenium-test-${JOB_SUFFIX}
+          kubectl --kubeconfig=./kubeconfig delete job selenium-test-${JOB_SUFFIX}gi
