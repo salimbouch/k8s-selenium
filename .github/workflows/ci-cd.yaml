@@ -47,36 +47,31 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }}
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'v1.27.3'
-
       - name: Deploy to k3s
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          IMAGE_TAG: ${{ github.sha }}
-          JOB_SUFFIX: ${{ github.sha }}
         run: |
           echo "$KUBE_CONFIG" | base64 -d > kubeconfig
+          
+          # Update web-app deployment
+          sed -i 's|image: .*|image: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}|' k8s/deployments/web-app-deployment.yaml
           kubectl --kubeconfig=./kubeconfig apply -f k8s/deployments/
           kubectl --kubeconfig=./kubeconfig apply -f k8s/services/
-          kubectl --kubeconfig=./kubeconfig set image deployment/web-app web-app=$DOCKERHUB_USERNAME/k8s-selenium:web-app-$IMAGE_TAG
-          
-          # Delete any existing selenium-test job
-          kubectl --kubeconfig=./kubeconfig delete job -l app=selenium-test --ignore-not-found
 
-          # Apply the Selenium test job with environment variable substitution
-          envsubst < k8s/jobs/selenium-test-job.yaml | kubectl --kubeconfig=./kubeconfig apply -f -
+          # Create and apply Selenium test job
+          export JOB_SUFFIX=$(date +%s%N | sha256sum | head -c6)
+          envsubst < k8s/jobs/selenium-test-job.yaml | sed \
+            -e 's|${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g' \
+            -e 's|${IMAGE_TAG}|${{ github.sha }}|g' \
+            | kubectl --kubeconfig=./kubeconfig apply -f -
 
       - name: Run Selenium tests
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-          JOB_SUFFIX: ${{ github.sha }}
         run: |
-          kubectl --kubeconfig=./kubeconfig wait --for=condition=complete job/selenium-test-$JOB_SUFFIX --timeout=600s
-          TEST_POD=$(kubectl --kubeconfig=./kubeconfig get pods --selector=job-name=selenium-test-$JOB_SUFFIX --output=jsonpath='{.items[*].metadata.name}')
+          export JOB_SUFFIX=$(date +%s%N | sha256sum | head -c6)
+          kubectl --kubeconfig=./kubeconfig wait --for=condition=complete job/selenium-test-${JOB_SUFFIX} --timeout=600s
+          TEST_POD=$(kubectl --kubeconfig=./kubeconfig get pods --selector=job-name=selenium-test-${JOB_SUFFIX} --output=jsonpath='{.items[*].metadata.name}')
           kubectl --kubeconfig=./kubeconfig logs $TEST_POD > test_results.log
           if grep -q "FAILED" test_results.log; then exit 1; fi
 
@@ -85,3 +80,11 @@ jobs:
         with:
           name: test-results
           path: test_results.log
+
+      - name: Cleanup
+        if: always()
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          export JOB_SUFFIX=$(date +%s%N | sha256sum | head -c6)
+          kubectl --kubeconfig=./kubeconfig delete job selenium-test-${JOB_SUFFIX}
