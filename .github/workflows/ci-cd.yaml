@@ -1,67 +1,77 @@
-name: CI/CD Pipeline for Web App with Selenium Tests
+name: CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}  # Use the DockerHub username from GitHub secrets
-      IMAGE_TAG: ${{ github.sha }}  # Use the commit SHA as the image tag
+      IMAGE_TAG: web-app-${{ github.sha }}  # Tag with the commit SHA
+      DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Java 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
-          distribution: 'temurin'
           java-version: '17'
+          distribution: 'temurin'
 
-      - name: Build with Maven (no tests)
+      - name: Build with Maven (skip tests)
         run: mvn clean package -DskipTests
 
-      - name: Log in to DockerHub
-        run: echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-      - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/k8s-selenium:${{ github.sha }} .
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Push Docker image to DockerHub
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/k8s-selenium:${{ github.sha }}
+      - name: Build and push Web App Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:${{ env.IMAGE_TAG }}
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v3
         with:
-          version: 'v1.27.0'  # Ensure you're using a compatible version
+          version: 'v1.27.0'  # Adjust if needed
 
-      - name: Set up K8s context
+      - name: Configure K8s context
         run: echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
 
       - name: Update Kubernetes deployment with new image
         run: |
-          kubectl set image deployment/web-app web-app=${{ secrets.DOCKER_USERNAME }}/k8s-selenium:${{ github.sha }}
+          kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:${{ env.IMAGE_TAG }}
 
   run-selenium-tests:
     runs-on: ubuntu-latest
-    needs: build-and-deploy  # Ensure the deployment is completed before running tests
+    needs: build-and-deploy  # Ensures that the build and deploy job finishes first
     env:
-      HUB_URL: http://selenium-hub:4444/wd/hub  # Ensure this points to the correct Selenium hub
-      APP_URL: http://web-app:8080  # Kubernetes web app service URL
+      HUB_URL: http://selenium-hub:4444/wd/hub  # Selenium Hub URL in Kubernetes cluster
+      APP_URL: http://web-app:8080  # Web app service URL
+      DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Java 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
-          distribution: 'temurin'
           java-version: '17'
+          distribution: 'temurin'
 
       - name: Run Selenium Tests in Parallel
         run: mvn clean test -DsuiteXmlFile=testng.xml
