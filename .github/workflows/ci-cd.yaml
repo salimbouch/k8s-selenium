@@ -1,128 +1,83 @@
-name: CI/CD Pipeline
+- name: Run and Monitor Selenium Test Job
+  id: selenium-test
+  run: |
+    # Apply the job
+    cat k8s/jobs/selenium-test-job.yaml | \
+    sed "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g; s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g" | \
+    kubectl apply -f -
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    echo "Waiting for pod to be ready..."
+    kubectl wait --for=condition=ready pod -l job-name=selenium-test-job --timeout=300s
 
-jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
-    env:
-      IMAGE_TAG: ${{ github.sha }}
-      DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+    # Function to check job status
+    check_job_status() {
+      kubectl get job selenium-test-job -o jsonpath='{.status.conditions[].type}'
+    }
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    # Stream logs and monitor job status
+    timeout 600s bash << 'EOF'
+      kubectl logs -f job/selenium-test-job &
+      log_pid=$!
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Build with Maven (skip tests)
-        run: mvn clean package -DskipTests
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push Web App Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./docker/Dockerfile
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ env.IMAGE_TAG }}
-
-      - name: Build and push Test Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./docker/Dockerfile.test
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ env.IMAGE_TAG }}
-
-      - name: Set up Kubeconfig
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-
-      - name: Update Kubernetes deployment with new image
-        run: |
-          kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ env.IMAGE_TAG }}
-          kubectl rollout status deployment/web-app
-
-      - name: Delete old test job if exists
-        run: kubectl delete job selenium-test-job --ignore-not-found
-
-      - name: Run and Monitor Selenium Test Job
-        id: selenium-test
-        run: |
-          # Apply the job
-          cat k8s/jobs/selenium-test-job.yaml | \
-          sed "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g; s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g" | \
-          kubectl apply -f -
-
-          # Function to check job status
-          check_job_status() {
-            kubectl get job selenium-test-job -o jsonpath='{.status.conditions[].type}'
-          }
-
-          # Stream logs and monitor job status
-          (
-            kubectl logs -f job/selenium-test-job &
-            while true; do
-              status=$(check_job_status)
-              if [[ $status == "Complete" ]]; then
-                echo "Job completed successfully"
-                exit 0
-              elif [[ $status == "Failed" ]]; then
-                echo "Job failed"
-                exit 1
-              fi
-              sleep 5
-            done
-          )
-
-          # Capture the exit status
-          exit_status=$?
-
-          # Save logs to a file (in case streaming was interrupted)
-          kubectl logs job/selenium-test-job > test-results.log
-
-          # Set output variable for use in subsequent steps
-          if [ $exit_status -eq 0 ]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-          else
-            echo "status=failure" >> $GITHUB_OUTPUT
-          fi
-
-          # Exit with the appropriate status
-          exit $exit_status
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v3
-        if: always()
-        with:
-          name: test-results
-          path: test-results.log
-
-      - name: Clean up test job
-        if: always()
-        run: kubectl delete job selenium-test-job --ignore-not-found
-
-      - name: Check Selenium test status
-        if: steps.selenium-test.outputs.status == 'failure'
-        run: |
-          echo "Selenium tests failed"
+      while true; do
+        status=$(check_job_status)
+        if [[ $status == "Complete" ]]; then
+          echo "Job completed successfully"
+          kill $log_pid
+          exit 0
+        elif [[ $status == "Failed" ]]; then
+          echo "Job failed"
+          kill $log_pid
           exit 1
+        fi
+        sleep 5
+      done
+    EOF
+
+    # Capture the exit status
+    exit_status=$?
+
+    # Save logs to a file
+    kubectl logs job/selenium-test-job > test-results.log
+
+    # Set output variable for use in subsequent steps
+    if [ $exit_status -eq 0 ]; then
+      echo "status=success" >> $GITHUB_OUTPUT
+    elif [ $exit_status -eq 124 ]; then
+      echo "status=timeout" >> $GITHUB_OUTPUT
+    else
+      echo "status=failure" >> $GITHUB_OUTPUT
+    fi
+
+    # Print final status
+    if [ $exit_status -eq 0 ]; then
+      echo "Selenium tests completed successfully"
+    elif [ $exit_status -eq 124 ]; then
+      echo "Selenium tests timed out"
+    else
+      echo "Selenium tests failed"
+    fi
+
+    # Exit with the appropriate status
+    exit $exit_status
+
+- name: Upload test results
+  uses: actions/upload-artifact@v3
+  if: always()
+  with:
+    name: test-results
+    path: test-results.log
+
+- name: Clean up test job
+  if: always()
+  run: kubectl delete job selenium-test-job --ignore-not-found
+
+- name: Check Selenium test status
+  if: steps.selenium-test.outputs.status != 'success'
+  run: |
+    if [[ "${{ steps.selenium-test.outputs.status }}" == "failure" ]]; then
+      echo "Selenium tests failed"
+    else
+      echo "Selenium tests timed out"
+    fi
+    exit 1
