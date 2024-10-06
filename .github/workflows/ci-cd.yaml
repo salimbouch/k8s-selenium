@@ -68,9 +68,10 @@ jobs:
             job_name="selenium-test-job-${browser}"
             kubectl delete job ${job_name} --ignore-not-found
           
+            echo "Creating job for ${browser}:"
             cat k8s/jobs/selenium-test-job.yaml | \
             sed "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g; s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g; s|selenium-test-job|${job_name}|g; s|\${BROWSER}|${browser}|g" | \
-            kubectl apply -f -
+            kubectl create -f -
           done
 
           start_time=$(date +%s)
