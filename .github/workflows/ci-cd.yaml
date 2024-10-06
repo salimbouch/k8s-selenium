@@ -7,155 +7,99 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
-    env:
-      IMAGE_TAG: ${{ github.sha }}
-      DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
+      - uses: actions/checkout@v4
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-
-      - name: Build with Maven (skip tests)
+      - name: Build with Maven
         run: mvn clean package -DskipTests
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build
+          path: target/*.jar
 
+  docker-build:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
+        uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push Web App Docker image
-        uses: docker/build-push-action@v4
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./docker/Dockerfile
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ env.IMAGE_TAG }}
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }}
 
-      - name: Build and push Test Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./docker/Dockerfile.test
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ env.IMAGE_TAG }}
-
+  deploy:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Set up Kubeconfig
         run: |
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
-
-      - name: Update Kubernetes deployment with new image
+      - name: Update Kubernetes deployment
         run: |
-          kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ env.IMAGE_TAG }}
+          kubectl set image deployment/web-app web-app=${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:web-app-${{ github.sha }}
           kubectl rollout status deployment/web-app
 
-      - name: Run Selenium Tests in Parallel
+  test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        browser: [chrome, firefox, edge]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Kubeconfig
         run: |
-          set -x  # Enable command echoing
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+      - name: Run Selenium Test
+        run: |
+          job_name="selenium-test-job-${{ matrix.browser }}"
+          kubectl delete job ${job_name} --ignore-not-found
           
-          # Create jobs
-          for browser in chrome firefox edge; do
-            job_name="selenium-test-job-${browser}"
-            kubectl delete job ${job_name} --ignore-not-found
+          sed -e "s|\${JOB_NAME}|${job_name}|g" \
+              -e "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g" \
+              -e "s|\${IMAGE_TAG}|${{ github.sha }}|g" \
+              -e "s|\${BROWSER}|${{ matrix.browser }}|g" \
+              k8s/jobs/selenium-test-job.yaml | \
+          kubectl create -f -
           
-            sed -e "s|\${JOB_NAME}|${job_name}|g" \
-                -e "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g" \
-                -e "s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g" \
-                -e "s|\${BROWSER}|${browser}|g" \
-                k8s/jobs/selenium-test-job.yaml | \
-            kubectl create -f - > /dev/null
-          done
+          # Wait for job completion
+          kubectl wait --for=condition=complete job/${job_name} --timeout=300s || \
+          kubectl wait --for=condition=failed job/${job_name} --timeout=10s
           
-          echo "All jobs created. Waiting for completion..."
+          # Collect logs
+          kubectl logs job/${job_name} > ${{ matrix.browser }}-test-results.log
           
-          start_time=$(date +%s)
-          timeout=300  # 5 minutes timeout
-          job_statuses=()
-          
-          while true; do
-            current_time=$(date +%s)
-            elapsed=$((current_time - start_time))
-          
-            if [ $elapsed -ge $timeout ]; then
-              echo "Timeout reached. Exiting."
-              break
-            fi
-          
-            all_completed=true
-            job_statuses=()
-          
-            for browser in chrome firefox edge; do
-              job_name="selenium-test-job-${browser}"
-              status=$(kubectl get job ${job_name} -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}')
-          
-              if [ "$status" == "True" ]; then
-                job_statuses+=("$browser: Completed")
-              elif [ "$status" == "False" ]; then
-                job_statuses+=("$browser: Failed")
-              else
-                job_statuses+=("$browser: Running")
-                all_completed=false
-              fi
-            done
-          
-            echo "Current status: ${job_statuses[*]}"
-          
-            if $all_completed; then
-              echo "All jobs completed."
-              break
-            fi
-          
-            sleep 10
-          done
-          
-          # Final status check and log collection
-          failed_jobs=0
-          for browser in chrome firefox edge; do
-            job_name="selenium-test-job-${browser}"
-            status=$(kubectl get job ${job_name} -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}')
-          
-            if [ "$status" == "True" ]; then
-              echo "${browser} tests completed successfully"
-              kubectl logs job/${job_name} > ${browser}-test-results.log
-            else
-              echo "${browser} tests failed"
-              kubectl logs job/${job_name} > ${browser}-test-results.log
-              ((failed_jobs++))
-            fi
-          done
-          
-          if [ $failed_jobs -gt 0 ]; then
-            echo "Some tests failed"
+          # Check job status
+          if [ "$(kubectl get job ${job_name} -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}')" != "True" ]; then
+            echo "${{ matrix.browser }} tests failed"
             exit 1
-          else
-            echo "All tests completed successfully"
           fi
-          
-          set +x  # Disable command echoing
-
       - name: Upload test logs
+        uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v3
         with:
-          name: test-logs
-          path: '*-test-results.log'
-
-      - name: Clean up test jobs
-        if: always()
-        run: |
-          for browser in chrome firefox edge; do
-            kubectl delete job selenium-test-job-${browser} --ignore-not-found
-          done
+          name: ${{ matrix.browser }}-logs
+          path: ${{ matrix.browser }}-test-results.log
