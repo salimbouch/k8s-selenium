@@ -63,23 +63,21 @@ jobs:
           kubectl rollout status deployment/web-app
 
       - name: Run Selenium Tests in Parallel
-        run: |
-          set -x  # Enable command echoing
-          for browser in chrome firefox edge; do
-            job_name="selenium-test-job-${browser}"
-            kubectl delete job ${job_name} --ignore-not-found
-          
-            echo "Creating job for ${browser}:"
-            cat k8s/jobs/selenium-test-job.yaml | \
-            sed -e "s|\${JOB_NAME}|${job_name}|g" \
-                -e "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g" \
-                -e "s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g" \
-                -e "s|\${BROWSER}|${browser}|g" | \
-            sed 's/^/    /' | \
-            sed '1s/^    //' | \
-            tee /dev/stderr | \
-            kubectl create -f -
-          done
+          run: |
+            set -x  # Enable command echoing
+            for browser in chrome firefox edge; do
+              job_name="selenium-test-job-${browser}"
+              kubectl delete job ${job_name} --ignore-not-found
+            
+              echo "Creating job for ${browser}:"
+              sed -e "s|\${JOB_NAME}|${job_name}|g" \
+                  -e "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g" \
+                  -e "s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g" \
+                  -e "s|\${BROWSER}|${browser}|g" \
+                  k8s/jobs/selenium-test-job.yaml | \
+              tee /dev/stderr | \
+              kubectl create -f -
+            done
 
           echo "All jobs created. Waiting for completion..."
 
