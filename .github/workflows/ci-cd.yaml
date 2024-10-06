@@ -81,7 +81,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        browser: [chrome, firefox, edge]
+        browser: [ chrome, firefox, edge ]
+      fail-fast: false  # This allows all browser tests to run even if one fails
     steps:
       - uses: actions/checkout@v4
       - name: Set up Kubeconfig
@@ -101,18 +102,35 @@ jobs:
               k8s/jobs/selenium-test-job.yaml | \
           kubectl create -f -
           
-          # Wait for job completion
-          kubectl wait --for=condition=complete job/${job_name} --timeout=300s || \
-          kubectl wait --for=condition=failed job/${job_name} --timeout=10s
+          # Wait for job completion with a timeout
+          start_time=$(date +%s)
+          timeout=300  # 5 minutes timeout
+          
+          while true; do
+            status=$(kubectl get job ${job_name} -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}')
+            failed=$(kubectl get job ${job_name} -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}')
+          
+            if [ "$status" == "True" ]; then
+              echo "${{ matrix.browser }} tests completed successfully"
+              break
+            elif [ "$failed" == "True" ]; then
+              echo "${{ matrix.browser }} tests failed"
+              exit 1
+            fi
+          
+            current_time=$(date +%s)
+            elapsed=$((current_time - start_time))
+          
+            if [ $elapsed -ge $timeout ]; then
+              echo "${{ matrix.browser }} tests timed out"
+              exit 1
+            fi
+          
+            sleep 5
+          done
           
           # Collect logs
           kubectl logs job/${job_name} > ${{ matrix.browser }}-test-results.log
-          
-          # Check job status
-          if [ "$(kubectl get job ${job_name} -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}')" != "True" ]; then
-            echo "${{ matrix.browser }} tests failed"
-            exit 1
-          fi
       - name: Upload test logs
         uses: actions/upload-artifact@v4
         if: always()
