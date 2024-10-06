@@ -82,7 +82,7 @@ jobs:
     strategy:
       matrix:
         browser: [ chrome, firefox, edge ]
-      fail-fast: false  # This allows all browser tests to run even if one fails
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
       - name: Set up Kubeconfig
@@ -102,35 +102,44 @@ jobs:
               k8s/jobs/selenium-test-job.yaml | \
           kubectl create -f -
           
-          # Wait for job completion with a timeout
           start_time=$(date +%s)
-          timeout=300  # 5 minutes timeout
+          timeout=300
+          test_status="Unknown"
           
           while true; do
             status=$(kubectl get job ${job_name} -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}')
             failed=$(kubectl get job ${job_name} -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}')
           
             if [ "$status" == "True" ]; then
-              echo "${{ matrix.browser }} tests completed successfully"
+              test_status="Completed"
               break
             elif [ "$failed" == "True" ]; then
-              echo "${{ matrix.browser }} tests failed"
-              exit 1
+              test_status="Failed"
+              break
             fi
           
             current_time=$(date +%s)
             elapsed=$((current_time - start_time))
           
             if [ $elapsed -ge $timeout ]; then
-              echo "${{ matrix.browser }} tests timed out"
-              exit 1
+              test_status="Timed out"
+              break
             fi
           
             sleep 5
           done
           
-          # Collect logs
-          kubectl logs job/${job_name} > ${{ matrix.browser }}-test-results.log
+          # Collect logs regardless of the outcome
+          kubectl logs job/${job_name} > ${{ matrix.browser }}-test-results.log || true
+          
+          echo "Test status: $test_status" >> ${{ matrix.browser }}-test-results.log
+          
+          if [ "$test_status" != "Completed" ]; then
+            echo "${{ matrix.browser }} tests $test_status"
+            exit 1
+          else
+            echo "${{ matrix.browser }} tests completed successfully"
+          fi
       - name: Upload test logs
         uses: actions/upload-artifact@v4
         if: always()
