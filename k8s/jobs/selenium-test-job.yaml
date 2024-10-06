@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: selenium-test-job
+  name: selenium-test-job-${BROWSER}
 spec:
   backoffLimit: 0
   template:
@@ -15,5 +15,6 @@ spec:
               value: "http://selenium-hub:4444/wd/hub"
             - name: APP_URL
               value: "http://web-app:8080"
+            - name: BROWSER
+              value: "${BROWSER}"
       restartPolicy: Never
-

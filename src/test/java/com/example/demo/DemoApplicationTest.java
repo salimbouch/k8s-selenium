@@ -3,6 +3,7 @@ package com.example.demo;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.edge.EdgeOptions;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.firefox.FirefoxOptions;
@@ -16,19 +17,26 @@ public class DemoApplicationTest {
     private String baseUrl;
 
     @BeforeMethod
-    @Parameters("browser")
-    public void setup(String browser) throws Exception {
+    public void setup() throws Exception {
         String hubUrl = System.getProperty("HUB_URL", "http://selenium-hub:4444/wd/hub");
         baseUrl = System.getProperty("APP_URL", "http://web-app:8080");
+        String browser = System.getenv("BROWSER");
 
-        if (browser.equalsIgnoreCase("chrome")) {
-            ChromeOptions options = new ChromeOptions();
-            driver = new RemoteWebDriver(new URL(hubUrl), options);
-        } else if (browser.equalsIgnoreCase("firefox")) {
-            FirefoxOptions options = new FirefoxOptions();
-            driver = new RemoteWebDriver(new URL(hubUrl), options);
-        } else {
-            throw new IllegalArgumentException("Invalid browser specified");
+        switch (browser.toLowerCase()) {
+            case "chrome":
+                ChromeOptions chromeOptions = new ChromeOptions();
+                driver = new RemoteWebDriver(new URL(hubUrl), chromeOptions);
+                break;
+            case "firefox":
+                FirefoxOptions firefoxOptions = new FirefoxOptions();
+                driver = new RemoteWebDriver(new URL(hubUrl), firefoxOptions);
+                break;
+            case "edge":
+                EdgeOptions edgeOptions = new EdgeOptions();
+                driver = new RemoteWebDriver(new URL(hubUrl), edgeOptions);
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid browser specified: " + browser);
         }
     }
 
