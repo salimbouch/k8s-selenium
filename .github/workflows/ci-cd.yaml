@@ -62,7 +62,7 @@ jobs:
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/k8s-selenium:test-${{ github.sha }}
 
   deploy:
-    needs: docker-build
+    needs: docker-build-and-push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
