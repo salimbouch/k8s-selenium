@@ -64,16 +64,24 @@ jobs:
 
       - name: Run Selenium Tests in Parallel
         run: |
+          set -x  # Enable command echoing
           for browser in chrome firefox edge; do
             job_name="selenium-test-job-${browser}"
             kubectl delete job ${job_name} --ignore-not-found
           
             echo "Creating job for ${browser}:"
             cat k8s/jobs/selenium-test-job.yaml | \
-            sed "s|\${JOB_NAME}|${job_name}|g; s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g; s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g; s|\${BROWSER}|${browser}|g" | \
+            sed -e "s|\${JOB_NAME}|${job_name}|g" \
+                -e "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g" \
+                -e "s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g" \
+                -e "s|\${BROWSER}|${browser}|g" | \
+            sed 's/^/    /' | \
+            sed '1s/^    //' | \
             tee /dev/stderr | \
             kubectl create -f -
           done
+
+          echo "All jobs created. Waiting for completion..."
 
           start_time=$(date +%s)
           completed_jobs=0
@@ -82,7 +90,8 @@ jobs:
           while [ $completed_jobs -lt 3 ] && [ $(($(date +%s) - start_time)) -lt 300 ]; do
             for browser in chrome firefox edge; do
               job_name="selenium-test-job-${browser}"
-              status=$(kubectl get job ${job_name} -o jsonpath='{.status.conditions[].type}')
+              status=$(kubectl get job ${job_name} -o jsonpath='{.status.conditions[].type}' || echo "Pending")
+              echo "Job ${job_name} status: ${status}"
           
               if [[ $status == "Complete" ]]; then
                 ((completed_jobs++))
@@ -97,9 +106,12 @@ jobs:
             done
 
             if [ $completed_jobs -lt 3 ]; then
+              echo "Waiting for jobs to complete. Completed: ${completed_jobs}, Failed: ${failed_jobs}"
               sleep 5
             fi
           done
+
+          echo "Final status - Completed: ${completed_jobs}, Failed: ${failed_jobs}"
 
           if [ $completed_jobs -lt 3 ]; then
             echo "Tests timed out after 300 seconds"
@@ -110,6 +122,7 @@ jobs:
           else
             echo "All tests completed successfully"
           fi
+          set +x  # Disable command echoing
 
       - name: Upload test logs
         if: always()
