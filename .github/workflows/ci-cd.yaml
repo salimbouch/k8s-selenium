@@ -24,7 +24,7 @@ jobs:
           name: app-build
           path: target/*.jar
 
-  docker-build:
+  docker-build-and-push:
     needs: build
     runs-on: ubuntu-latest
     steps:
