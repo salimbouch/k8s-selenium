@@ -70,7 +70,8 @@ jobs:
           
             echo "Creating job for ${browser}:"
             cat k8s/jobs/selenium-test-job.yaml | \
-            sed "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g; s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g; s|selenium-test-job|${job_name}|g; s|\${BROWSER}|${browser}|g" | \
+            sed "s|\${JOB_NAME}|${job_name}|g; s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g; s|\${IMAGE_TAG}|${{ env.IMAGE_TAG }}|g; s|\${BROWSER}|${browser}|g" | \
+            tee /dev/stderr | \
             kubectl create -f -
           done
 
