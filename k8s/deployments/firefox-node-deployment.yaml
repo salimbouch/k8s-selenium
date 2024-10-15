@@ -30,3 +30,10 @@ spec:
           ports:
             - containerPort: 5555
               protocol: TCP
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
