@@ -1,25 +1,20 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: selenium-test-job
+  name: ${JOB_NAME}
 spec:
-  parallelism: 5  # Run 5 test pods simultaneously
-  completions: 5
+  backoffLimit: 0
   template:
     spec:
       containers:
         - name: selenium-test
           image: ${DOCKER_USERNAME}/k8s-selenium:test-${IMAGE_TAG}
+          imagePullPolicy: Always
           env:
             - name: HUB_URL
               value: "http://selenium-hub:4444/wd/hub"
             - name: APP_URL
               value: "http://web-app:8080"
-          resources:
-            requests:
-              cpu: 1
-              memory: 1Gi
-            limits:
-              cpu: 2
-              memory: 2Gi
+            - name: BROWSER
+              value: "${BROWSER}"
       restartPolicy: Never
