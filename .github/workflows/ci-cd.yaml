@@ -99,7 +99,7 @@ jobs:
               -e "s|\${DOCKER_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g" \
               -e "s|\${IMAGE_TAG}|${{ github.sha }}|g" \
               -e "s|\${BROWSER}|${{ matrix.browser }}|g" \
-              k8s/jobs/selenium-test-job.yaml | \
+              k8s/jobs/pipeline/selenium-test-job.yaml | \
           kubectl create -f -
           
           start_time=$(date +%s)

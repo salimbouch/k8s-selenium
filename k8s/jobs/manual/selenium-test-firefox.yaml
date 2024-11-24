@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: selenium-test-edge
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      containers:
+        - name: selenium-test
+          image: your-dockerhub-username/k8s-selenium:test
+          env:
+            - name: BROWSER
+              value: "edge"
+            - name: HUB_URL
+              value: "http://selenium-hub:4444/wd/hub"
+            - name: APP_URL
+              value: "http://web-app:8080"
+      restartPolicy: Never
