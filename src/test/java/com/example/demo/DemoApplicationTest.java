@@ -52,6 +52,7 @@ public class DemoApplicationTest {
 
     @Test
     public void testButton2() {
+
         driver.get(baseUrl);
         WebElement button2 = driver.findElement(By.xpath("//button[text()='Button 2']"));
         button2.click();
