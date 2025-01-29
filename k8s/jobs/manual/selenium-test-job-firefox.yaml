@@ -1,18 +1,17 @@
-# k8s/jobs/manual/selenium-test-chrome.yaml
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: selenium-test-chrome
+  name: selenium-test-job-edge
 spec:
   backoffLimit: 0
   template:
     spec:
       containers:
         - name: selenium-test
-          image: salimbou/k8s-selenium:test-chrome
+          image: salimbou/k8s-selenium:test-livedemo
           env:
             - name: BROWSER
-              value: "chrome"
+              value: "edge"
             - name: HUB_URL
               value: "http://selenium-hub:4444/wd/hub"
             - name: APP_URL
