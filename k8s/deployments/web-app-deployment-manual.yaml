@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: web-app
-          image: your-dockerhub-username/k8s-selenium:web-app
+          image: salimbou/k8s-selenium:web-app-3c4875a1955f95e2e19fd45c94d2a39cf7bda000
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
