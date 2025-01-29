@@ -9,7 +9,7 @@ spec:
     spec:
       containers:
         - name: selenium-test
-          image: your-dockerhub-username/k8s-selenium:test
+          image: salimbou/k8s-selenium:test-edge
           env:
             - name: BROWSER
               value: "firefox"

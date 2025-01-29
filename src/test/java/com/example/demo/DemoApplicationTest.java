@@ -24,6 +24,7 @@ public class DemoApplicationTest {
         String browser = System.getenv("BROWSER");
 
         switch (browser.toLowerCase()) {
+
             case "chrome":
                 ChromeOptions chromeOptions = new ChromeOptions();
                 driver = new RemoteWebDriver(new URL(hubUrl), chromeOptions);
